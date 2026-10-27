@@ -1,0 +1,674 @@
+[
+  {
+    "id": "rag-foundations",
+    "title": "Retrieval-augmented generation",
+    "category": "RAG",
+    "text": "Retrieval-augmented generation, or RAG, combines a search step with a language model. A retriever selects passages from a corpus and passes them to a generator as context. The generator should answer from the supplied evidence rather than from unsupported parametric memory. This architecture lets a system use fresh or private knowledge without retraining the model.",
+    "facts": [
+      {
+        "question": "What two steps does retrieval-augmented generation combine?",
+        "answer": "RAG combines a retrieval or search step with language-model generation."
+      },
+      {
+        "question": "Why can RAG use fresh or private knowledge without retraining?",
+        "answer": "Because relevant passages are retrieved from a corpus and supplied to the generator as context at query time."
+      },
+      {
+        "question": "What should a RAG generator use as the basis for its answer?",
+        "answer": "It should answer from the retrieved evidence supplied in the context rather than from unsupported parametric memory."
+      },
+      {
+        "question": "Does RAG require retraining the language model for every corpus update?",
+        "answer": "No. RAG allows new or private knowledge to be made available through retrieval without retraining the model."
+      }
+    ]
+  },
+  {
+    "id": "retrieval-pipeline",
+    "title": "The retrieval pipeline",
+    "category": "Retrieval",
+    "text": "A retrieval pipeline transforms a user question into a search representation, searches an index, and ranks candidate passages. The top-ranked passages become the context for generation. Retrieval quality limits answer quality: a generator cannot faithfully use evidence that was never returned. Evaluation should therefore inspect both retrieved contexts and generated answers.",
+    "facts": [
+      {
+        "question": "What does a retrieval pipeline do with a user question?",
+        "answer": "It transforms the question into a search representation, searches an index, and ranks candidate passages."
+      },
+      {
+        "question": "Which passages are used as generation context?",
+        "answer": "The top-ranked passages returned by the retrieval stage are used as context."
+      },
+      {
+        "question": "Why does retrieval quality limit answer quality?",
+        "answer": "A generator cannot faithfully use evidence that was never returned, so missing relevant passages constrain the answer."
+      },
+      {
+        "question": "What should RAG evaluation inspect besides generated answers?",
+        "answer": "It should also inspect the retrieved contexts, because they determine what evidence was available."
+      }
+    ]
+  },
+  {
+    "id": "chunking",
+    "title": "Document chunking",
+    "category": "Retrieval",
+    "text": "Chunking splits long documents into passages that can be indexed independently. Smaller chunks improve precision but can split an idea across boundaries. Larger chunks preserve local context but may dilute an embedding and waste context-window space. Chunk size and overlap are pipeline parameters that should be recorded and evaluated rather than guessed once.",
+    "facts": [
+      {
+        "question": "What does chunking do to long documents?",
+        "answer": "It splits documents into passages that can be indexed independently."
+      },
+      {
+        "question": "What is the tradeoff of smaller chunks?",
+        "answer": "Smaller chunks improve retrieval precision but can split an idea across chunk boundaries."
+      },
+      {
+        "question": "Why can larger chunks be wasteful?",
+        "answer": "They preserve more local context but can dilute an embedding and consume extra context-window space."
+      },
+      {
+        "question": "How should chunk size and overlap be treated?",
+        "answer": "They are pipeline parameters that should be recorded and evaluated rather than guessed once."
+      }
+    ]
+  },
+  {
+    "id": "embeddings",
+    "title": "Embeddings",
+    "category": "Retrieval",
+    "text": "An embedding model maps text to a numeric vector so that semantically similar text has similar vectors. Dense retrieval compares a question vector with passage vectors using a similarity metric such as cosine similarity. Changing the embedding model changes the vector space, so an index must not mix vectors from incompatible models.",
+    "facts": [
+      {
+        "question": "What does an embedding model map text to?",
+        "answer": "It maps text to a numeric vector that represents semantic meaning."
+      },
+      {
+        "question": "How does dense retrieval compare questions and passages?",
+        "answer": "It compares a question vector with passage vectors using a similarity metric such as cosine similarity."
+      },
+      {
+        "question": "Why must an index not mix vectors from incompatible embedding models?",
+        "answer": "Different embedding models create different vector spaces, so their vectors are not meaningfully comparable."
+      },
+      {
+        "question": "What property should semantically similar text have in embedding space?",
+        "answer": "Semantically similar text should have similar vectors."
+      }
+    ]
+  },
+  {
+    "id": "vector-similarity",
+    "title": "Vector similarity",
+    "category": "Retrieval",
+    "text": "Cosine similarity measures the angle between two vectors and ignores their magnitudes. Dot product also depends on vector length, while Euclidean distance measures straight-line separation. The chosen metric must match how the embedding model was trained. Similarity scores are useful for ranking, but they are not calibrated probabilities of relevance.",
+    "facts": [
+      {
+        "question": "What does cosine similarity measure?",
+        "answer": "It measures the angle between two vectors and ignores their magnitudes."
+      },
+      {
+        "question": "Which similarity measure depends on vector length?",
+        "answer": "Dot product depends on vector length as well as direction."
+      },
+      {
+        "question": "What must the vector similarity metric match?",
+        "answer": "It must match how the embedding model was trained."
+      },
+      {
+        "question": "Are similarity scores calibrated probabilities of relevance?",
+        "answer": "No. Similarity scores are useful for ranking but are not calibrated relevance probabilities."
+      }
+    ]
+  },
+  {
+    "id": "qdrant",
+    "title": "Qdrant",
+    "category": "Vector database",
+    "text": "Qdrant is a vector database that stores vectors together with JSON payloads. It supports filtering, collection configuration, persistence, and horizontal deployment options. A collection defines the vector dimension and distance metric, so those values must match the embedding model. Payload fields can carry source identifiers and metadata used for filtering or display.",
+    "facts": [
+      {
+        "question": "What does Qdrant store alongside vectors?",
+        "answer": "Qdrant stores vectors together with JSON payloads."
+      },
+      {
+        "question": "What does a Qdrant collection define?",
+        "answer": "A collection defines the vector dimension and distance metric, along with other indexing configuration."
+      },
+      {
+        "question": "Why must collection settings match the embedding model?",
+        "answer": "The vector dimension and distance metric must be compatible with the embedding model used to create vectors."
+      },
+      {
+        "question": "What can Qdrant payloads contain?",
+        "answer": "Payloads can carry source identifiers, metadata, and other JSON fields used for filtering or display."
+      }
+    ]
+  },
+  {
+    "id": "hnsw",
+    "title": "HNSW indexing",
+    "category": "Vector database",
+    "text": "Hierarchical Navigable Small World, or HNSW, is a graph-based approximate nearest-neighbor index. It navigates a layered graph to find close vectors without scanning every point. HNSW trades a small amount of recall for much lower search latency. Parameters such as M and ef_construct control graph connectivity and build effort, while ef controls query-time exploration.",
+    "facts": [
+      {
+        "question": "What kind of index is HNSW?",
+        "answer": "HNSW is a graph-based approximate nearest-neighbor index."
+      },
+      {
+        "question": "How does HNSW search avoid scanning every vector?",
+        "answer": "It navigates a layered graph of nearby vectors to find candidates without scanning every point."
+      },
+      {
+        "question": "What does HNSW trade for lower search latency?",
+        "answer": "It trades a small amount of recall, because the search is approximate, for lower latency."
+      },
+      {
+        "question": "What does the ef parameter control in HNSW?",
+        "answer": "ef controls query-time graph exploration and affects the recall-latency tradeoff."
+      }
+    ]
+  },
+  {
+    "id": "top-k",
+    "title": "Top-k retrieval",
+    "category": "Retrieval",
+    "text": "Top-k retrieval returns the k highest-ranked candidates for a query. Increasing k raises the chance of including a relevant passage, which can improve recall, but it also adds irrelevant context and generation cost. A larger k is not automatically better. The right value depends on the corpus, chunking, reranker, and the generator's ability to ignore distractors.",
+    "facts": [
+      {
+        "question": "What does top-k retrieval return?",
+        "answer": "It returns the k highest-ranked candidate passages for a query."
+      },
+      {
+        "question": "What is a benefit of increasing k?",
+        "answer": "A larger k raises the chance that a relevant passage is included, which can improve recall."
+      },
+      {
+        "question": "What costs come with a larger k?",
+        "answer": "It adds irrelevant context and increases generation cost."
+      },
+      {
+        "question": "Is a larger top-k always better?",
+        "answer": "No. The right k depends on the corpus, chunking, reranking, and the generator's ability to ignore distractors."
+      }
+    ]
+  },
+  {
+    "id": "prompt-grounding",
+    "title": "Grounded generation prompts",
+    "category": "Generation",
+    "text": "A grounded-generation prompt instructs the model to answer only from supplied context and to state when the evidence is insufficient. Numbered or delimited passages make evidence easier to reference. The prompt should not ask the model to follow instructions found inside retrieved documents, because those passages may contain prompt-injection attacks.",
+    "facts": [
+      {
+        "question": "What should a grounded-generation prompt tell the model about unsupported evidence?",
+        "answer": "It should instruct the model to answer only from supplied context and state when the evidence is insufficient."
+      },
+      {
+        "question": "Why are numbered or delimited passages useful?",
+        "answer": "They make individual evidence passages easier for the model to reference."
+      },
+      {
+        "question": "Why should retrieved text be treated as untrusted?",
+        "answer": "Retrieved documents may contain prompt-injection instructions, so the model should not follow instructions found inside them."
+      },
+      {
+        "question": "What is the grounding boundary in a RAG prompt?",
+        "answer": "The model's answer should be grounded in the supplied retrieved context rather than outside knowledge."
+      }
+    ]
+  },
+  {
+    "id": "context-window",
+    "title": "Context windows",
+    "category": "Generation",
+    "text": "A context window is the maximum number of tokens a model can attend to in one request. It includes system instructions, retrieved passages, conversation history, and the generated output. Filling the window with many marginally relevant passages can distract the model and raise latency and cost. Context selection is part of retrieval quality, not just a generation detail.",
+    "facts": [
+      {
+        "question": "What does a context window limit?",
+        "answer": "It limits the number of tokens a model can attend to in one request, including instructions, retrieved passages, history, and output."
+      },
+      {
+        "question": "What can fill a context window besides retrieved passages?",
+        "answer": "System instructions, conversation history, and generated output also consume the context window."
+      },
+      {
+        "question": "Why can too many marginal passages hurt?",
+        "answer": "They can distract the model and increase latency and cost."
+      },
+      {
+        "question": "Is context selection only a generation concern?",
+        "answer": "No. Selecting useful context is part of retrieval and evaluation quality."
+      }
+    ]
+  },
+  {
+    "id": "faithfulness-metric",
+    "title": "Faithfulness",
+    "category": "Evaluation",
+    "text": "Ragas faithfulness decomposes an answer into atomic claims and judges whether each claim is supported by the retrieved contexts. The score is the fraction of supported claims. A terse answer can receive a high faithfulness score simply because it makes few claims. Faithfulness measures grounding in the retrieved context, not correctness against the golden answer.",
+    "facts": [
+      {
+        "question": "What does Ragas faithfulness decompose an answer into?",
+        "answer": "It decomposes the answer into atomic claims."
+      },
+      {
+        "question": "How is the faithfulness score calculated?",
+        "answer": "It is the fraction of answer claims that are supported by the retrieved contexts."
+      },
+      {
+        "question": "Why can a terse answer score highly for faithfulness?",
+        "answer": "A terse answer makes few claims, so it can have a high supported-claim fraction."
+      },
+      {
+        "question": "Does faithfulness check correctness against the golden answer?",
+        "answer": "No. It measures grounding in retrieved contexts, not correctness against ground truth."
+      }
+    ]
+  },
+  {
+    "id": "context-recall",
+    "title": "Context recall",
+    "category": "Evaluation",
+    "text": "Ragas context recall asks whether the claims in a reference answer can be attributed to the retrieved contexts. It uses the ground-truth answer to identify claims and the target's retrieved passages as evidence. This makes it a retrieval-sensitive metric. Passing the curated reference contexts to this metric instead of the target's contexts would hide retrieval failures and inflate the result.",
+    "facts": [
+      {
+        "question": "What does context recall check?",
+        "answer": "It checks whether claims in the reference answer can be attributed to the retrieved contexts."
+      },
+      {
+        "question": "Which inputs does context recall use?",
+        "answer": "It uses the question, the ground-truth reference answer, and the target's retrieved contexts."
+      },
+      {
+        "question": "Why is context recall retrieval-sensitive?",
+        "answer": "It depends on the target's retrieved passages containing evidence for the reference claims."
+      },
+      {
+        "question": "Why should curated reference contexts not replace target contexts in context recall?",
+        "answer": "Doing so would hide retrieval failures and inflate the score."
+      }
+    ]
+  },
+  {
+    "id": "answer-relevance",
+    "title": "Answer relevance",
+    "category": "Evaluation",
+    "text": "Ragas answer relevance generates candidate questions from an answer and compares them with the original question using embeddings. It asks whether the response addresses what was asked. The metric does not establish factual correctness, and a plausible but wrong answer can still be relevant. It is most useful alongside faithfulness and context recall.",
+    "facts": [
+      {
+        "question": "How does answer relevance evaluate a response?",
+        "answer": "It generates candidate questions from the answer and compares their embeddings with the original question."
+      },
+      {
+        "question": "Does answer relevance establish factual correctness?",
+        "answer": "No. A plausible but incorrect answer can still be relevant."
+      },
+      {
+        "question": "What question does answer relevance try to answer?",
+        "answer": "It asks whether the response addresses what the user asked."
+      },
+      {
+        "question": "Which metrics complement answer relevance?",
+        "answer": "Faithfulness and context recall are important complements."
+      }
+    ]
+  },
+  {
+    "id": "hallucination-rate",
+    "title": "Hallucination rate",
+    "category": "Evaluation",
+    "text": "EvalForge derives hallucination rate as one minus faithfulness, averaged over queries with a valid faithfulness judgment. This is a proxy for unsupported claims, not a calibrated probability that an answer is false. The dashboard must report coverage because undefined judgments are excluded. It cannot detect misinformation that also appears in the retrieved context.",
+    "facts": [
+      {
+        "question": "How does EvalForge derive hallucination rate?",
+        "answer": "It computes one minus faithfulness, averaged over queries with a valid faithfulness judgment."
+      },
+      {
+        "question": "Is the derived hallucination rate a calibrated probability of falsehood?",
+        "answer": "No. It is a proxy for unsupported claims, not a calibrated probability that an answer is false."
+      },
+      {
+        "question": "Why must hallucination rate be shown with coverage?",
+        "answer": "Undefined judgments are excluded, so coverage shows how many queries contributed to the metric."
+      },
+      {
+        "question": "Can the derived hallucination rate detect misinformation present in retrieved context?",
+        "answer": "No. An answer faithful to bad retrieved context can still be wrong."
+      }
+    ]
+  },
+  {
+    "id": "ttft",
+    "title": "Time to first token",
+    "category": "Latency",
+    "text": "Time to first token, or TTFT, measures the delay before the first generated output token arrives. It captures retrieval, queueing inside the target, prompt processing, and network transit. TTFT cannot be measured from a single non-streaming JSON response because that response arrives only after generation completes. A target-reported TTFT must be labelled as unverified.",
+    "facts": [
+      {
+        "question": "What does TTFT measure?",
+        "answer": "TTFT measures the delay before the first generated output token arrives."
+      },
+      {
+        "question": "Which stages can TTFT include?",
+        "answer": "It can include retrieval, target-internal queueing, prompt processing, and network transit."
+      },
+      {
+        "question": "Why can a non-streaming JSON response not provide platform-measured TTFT?",
+        "answer": "The JSON response arrives only after generation completes, so the first-token moment is not observable."
+      },
+      {
+        "question": "How should a target-reported TTFT be treated?",
+        "answer": "It should be labelled as target-reported and unverified rather than presented as independently measured."
+      }
+    ]
+  },
+  {
+    "id": "percentiles",
+    "title": "Latency percentiles",
+    "category": "Latency",
+    "text": "Latency percentiles summarize a distribution. p50 is the median, p95 is the value below which 95 percent of observations fall, and p99 describes the extreme tail. Percentile interpolation estimates positions between sorted observations. Tail percentiles need enough samples to be stable; a p99 estimated from 20 requests should not be treated as an SLO measurement.",
+    "facts": [
+      {
+        "question": "What does p50 latency represent?",
+        "answer": "p50 is the median latency."
+      },
+      {
+        "question": "What does p95 latency mean?",
+        "answer": "p95 is the value below which 95 percent of latency observations fall."
+      },
+      {
+        "question": "Why are tail percentiles such as p99 unstable with few samples?",
+        "answer": "They describe rare observations, so small samples produce unstable and highly variable estimates."
+      },
+      {
+        "question": "Why should p99 from 20 requests not be treated as an SLO measurement?",
+        "answer": "There are too few observations for a stable extreme-tail estimate."
+      }
+    ]
+  },
+  {
+    "id": "throughput",
+    "title": "Output token throughput",
+    "category": "Latency",
+    "text": "Output token throughput divides generated tokens by a time interval. When TTFT is available, the generation window is total latency minus TTFT, giving a more direct decode rate. If provider usage is missing, EvalForge leaves throughput empty rather than estimating tokens from characters. Token counts and intervals must use consistent units.",
+    "facts": [
+      {
+        "question": "How is output token throughput calculated?",
+        "answer": "It divides generated output tokens by a time interval."
+      },
+      {
+        "question": "Which interval gives a direct decode rate when TTFT is available?",
+        "answer": "The generation window, calculated as total latency minus TTFT."
+      },
+      {
+        "question": "What should EvalForge do when provider token usage is missing?",
+        "answer": "It should leave throughput empty rather than estimating tokens from characters."
+      },
+      {
+        "question": "Why must token counts and intervals be consistent?",
+        "answer": "Inconsistent units produce meaningless throughput rates."
+      }
+    ]
+  },
+  {
+    "id": "warmup",
+    "title": "Warm-up requests",
+    "category": "Latency",
+    "text": "Warm-up requests pay connection, model-load, and cache cold-start costs before measurement begins. EvalForge excludes warm-ups from latency percentiles and stores the warm-up count on the run. Warm-up traffic is not persisted as query results. The count must be recorded because it affects reproducibility and total cost.",
+    "facts": [
+      {
+        "question": "What costs do warm-up requests absorb?",
+        "answer": "Warm-ups absorb connection, model-load, and cache cold-start costs."
+      },
+      {
+        "question": "Are warm-up requests included in latency percentiles?",
+        "answer": "No. EvalForge excludes warm-up requests from measured latency percentiles."
+      },
+      {
+        "question": "Does EvalForge persist warm-up traffic as query results?",
+        "answer": "No. Warm-up traffic is discarded and not persisted as query results."
+      },
+      {
+        "question": "Why is the warm-up count stored on a run?",
+        "answer": "It affects reproducibility, cost, and interpretation of the measurement protocol."
+      }
+    ]
+  },
+  {
+    "id": "judge-cache",
+    "title": "Judge caching",
+    "category": "Evaluation",
+    "text": "An LLM-judge cache maps canonical judge inputs to a prior score and explanation. The cache key should include the metric, judge model, prompt version, sample index, and evaluated text. Caching reduces cost and stabilizes repeated CI runs. It can hide provider drift when a model changes under the same name, so cache entries must be invalidated deliberately.",
+    "facts": [
+      {
+        "question": "What should a judge cache key include?",
+        "answer": "It should include the metric, judge model, prompt version, sample index, and evaluated text."
+      },
+      {
+        "question": "What are two benefits of judge caching?",
+        "answer": "It reduces judge cost and stabilizes repeated CI runs."
+      },
+      {
+        "question": "What risk does a judge cache introduce?",
+        "answer": "It can hide provider or model drift if cached results are reused without deliberate invalidation."
+      },
+      {
+        "question": "Why is sample index part of the cache key?",
+        "answer": "Repeated judgments are independent samples, so each sample index is cached separately."
+      }
+    ]
+  },
+  {
+    "id": "judge-noise",
+    "title": "LLM judge noise",
+    "category": "Evaluation",
+    "text": "LLM judges are noisy and can return different scores for the same input. Repeated judgments estimate a per-query score more stably, at additional cost. A CI tolerance prevents tiny score changes from blocking a pull request, but tolerance can also hide small real regressions. Reporting metric coverage and sample counts keeps the uncertainty visible.",
+    "facts": [
+      {
+        "question": "Why can the same judge input receive different scores?",
+        "answer": "LLM judges are stochastic and noisy, so repeated calls can produce different outputs."
+      },
+      {
+        "question": "What is the main benefit of repeated judgments?",
+        "answer": "Repeats produce a more stable per-query score estimate."
+      },
+      {
+        "question": "What is a downside of using a CI tolerance?",
+        "answer": "Tolerance can hide a small real quality regression."
+      },
+      {
+        "question": "What should be reported to keep judge uncertainty visible?",
+        "answer": "Metric coverage and sample counts should be reported alongside scores."
+      }
+    ]
+  },
+  {
+    "id": "ci-thresholds",
+    "title": "CI quality thresholds",
+    "category": "CI",
+    "text": "A quality gate compares a candidate run with an absolute threshold or a baseline. A safe gate fails closed when metric coverage is too low, rather than treating missing judgments as zero or as a pass. Thresholds should be explicit product policy. Tolerance reduces judge-noise flakes, but it is not a statistical significance test.",
+    "facts": [
+      {
+        "question": "What should a quality gate do when coverage is too low?",
+        "answer": "It should fail closed rather than treating missing judgments as zero or as a pass."
+      },
+      {
+        "question": "Why should CI thresholds be explicit?",
+        "answer": "They encode product policy and determine which quality regressions block a change."
+      },
+      {
+        "question": "What problem does a CI tolerance address?",
+        "answer": "It prevents tiny judge-score noise from causing false failures."
+      },
+      {
+        "question": "Is a tolerance a statistical significance test?",
+        "answer": "No. It is a product heuristic for reducing noise-driven failures."
+      }
+    ]
+  },
+  {
+    "id": "golden-datasets",
+    "title": "Golden datasets",
+    "category": "Evaluation",
+    "text": "A golden dataset contains questions, reference answers, and optionally curated evidence contexts. Versioning it prevents a moving test set from disguising regressions. Good datasets cover common queries, edge cases, and failure-prone retrieval paths. Dataset content should be reviewed for ambiguity, staleness, and prompt-injection risk before it gates releases.",
+    "facts": [
+      {
+        "question": "What does a golden dataset contain?",
+        "answer": "It contains questions, reference answers, and optionally curated evidence contexts."
+      },
+      {
+        "question": "Why should a golden dataset be versioned?",
+        "answer": "Versioning prevents a moving test set from disguising quality regressions."
+      },
+      {
+        "question": "What kinds of cases should a good golden dataset cover?",
+        "answer": "It should cover common queries, edge cases, and failure-prone retrieval paths."
+      },
+      {
+        "question": "Why must golden dataset content be reviewed for prompt injection?",
+        "answer": "Retrieved or evaluated content may contain instructions that can manipulate an LLM judge."
+      }
+    ]
+  },
+  {
+    "id": "ragas",
+    "title": "Ragas",
+    "category": "Evaluation",
+    "text": "Ragas is an open-source library of RAG evaluation metrics. It implements context recall, faithfulness, and answer relevance using LLM-based judging steps. Metric prompts and implementations can change between versions, so production runs should pin and report the Ragas version. Ragas metrics are evidence-producing heuristics, not ground truth.",
+    "facts": [
+      {
+        "question": "What is Ragas?",
+        "answer": "Ragas is an open-source library of RAG evaluation metrics."
+      },
+      {
+        "question": "Which metrics does EvalForge use from Ragas?",
+        "answer": "EvalForge uses Ragas context recall, faithfulness, and answer relevance."
+      },
+      {
+        "question": "Why should a production run pin the Ragas version?",
+        "answer": "Metric prompts and implementations can change between Ragas versions and affect comparability."
+      },
+      {
+        "question": "Are Ragas metric scores absolute ground truth?",
+        "answer": "No. They are evidence-producing evaluation heuristics and should not be treated as ground truth."
+      }
+    ]
+  },
+  {
+    "id": "groq",
+    "title": "Groq",
+    "category": "Provider",
+    "text": "Groq provides low-latency inference through an OpenAI-compatible chat completions API. Streaming responses deliver incremental text deltas and can include usage information in a final chunk. API keys must stay in environment variables or a secret manager. EvalForge records the model name and whether TTFT was measured from the stream.",
+    "facts": [
+      {
+        "question": "What API shape does Groq expose for chat completions?",
+        "answer": "Groq exposes an OpenAI-compatible chat completions API."
+      },
+      {
+        "question": "How does a streaming Groq response deliver text?",
+        "answer": "It delivers incremental text deltas in a stream, with usage possibly included in a final chunk."
+      },
+      {
+        "question": "Where should Groq API keys be stored?",
+        "answer": "In environment variables or a secret manager, never in stored run configuration or logs."
+      },
+      {
+        "question": "What latency provenance should EvalForge store for a Groq stream?",
+        "answer": "It stores measured TTFT when it times the first non-empty streamed delta."
+      }
+    ]
+  },
+  {
+    "id": "ollama",
+    "title": "Ollama",
+    "category": "Provider",
+    "text": "Ollama runs language models locally and exposes a streaming chat API. It is useful for private data and offline development, but local hardware affects quality and speed. Ollama reports token counts for prompt evaluation and generation. EvalForge can use Ollama for both the reference RAG target and the evaluation judge.",
+    "facts": [
+      {
+        "question": "What does Ollama allow developers to run locally?",
+        "answer": "It runs language models locally and exposes a streaming chat API."
+      },
+      {
+        "question": "Why is Ollama useful for sensitive data?",
+        "answer": "Local execution can keep prompts and context on infrastructure controlled by the operator."
+      },
+      {
+        "question": "What token counts does Ollama report?",
+        "answer": "It reports prompt-evaluation token counts and generated token counts."
+      },
+      {
+        "question": "What hardware factor affects Ollama evaluation?",
+        "answer": "Local hardware affects both generation quality feasibility and speed."
+      }
+    ]
+  },
+  {
+    "id": "sse",
+    "title": "Server-sent events",
+    "category": "Protocol",
+    "text": "Server-sent events, or SSE, is a one-way streaming format over HTTP. Each event has optional event and data fields, and events are separated by blank lines. A streaming RAG adapter can emit contexts first, then answer deltas, then a done event with usage. Clients should time the first non-empty answer delta rather than the arrival of metadata.",
+    "facts": [
+      {
+        "question": "What kind of communication is server-sent events?",
+        "answer": "SSE is a one-way streaming format over HTTP."
+      },
+      {
+        "question": "How are SSE events separated?",
+        "answer": "SSE events are separated by blank lines and can have event and data fields."
+      },
+      {
+        "question": "What event order can a streaming RAG adapter use?",
+        "answer": "It can emit contexts first, then answer token deltas, then a done event with usage."
+      },
+      {
+        "question": "Which SSE moment should a client time as TTFT?",
+        "answer": "The first non-empty answer delta, not the arrival of metadata such as contexts."
+      }
+    ]
+  },
+  {
+    "id": "sqlite-wal",
+    "title": "SQLite write-ahead logging",
+    "category": "Storage",
+    "text": "Write-ahead logging, or WAL, lets SQLite readers continue while a writer appends to a separate log. It improves read/write concurrency on file-backed databases. WAL does not allow multiple simultaneous writers, and a busy timeout helps wait for short lock contention. SQLite remains a single-machine metadata store rather than a distributed database.",
+    "facts": [
+      {
+        "question": "What does SQLite WAL allow readers to do?",
+        "answer": "WAL lets readers continue while a writer appends changes to a separate log."
+      },
+      {
+        "question": "Does WAL allow multiple simultaneous SQLite writers?",
+        "answer": "No. WAL improves read/write concurrency but still allows only one writer at a time."
+      },
+      {
+        "question": "What does SQLite's busy timeout do?",
+        "answer": "It waits for short lock contention instead of failing immediately."
+      },
+      {
+        "question": "Is SQLite a distributed database?",
+        "answer": "No. It is a single-machine metadata store."
+      }
+    ]
+  },
+  {
+    "id": "reproducibility",
+    "title": "Evaluation reproducibility",
+    "category": "Evaluation",
+    "text": "A reproducible run records the dataset version, target configuration, pipeline settings, judge model, prompt version, and evaluation configuration. Secrets are referenced through environment names rather than stored. New settings create a new run instead of mutating history. Reproducibility does not guarantee identical LLM outputs, but it makes differences explainable.",
+    "facts": [
+      {
+        "question": "What configuration should a reproducible run record?",
+        "answer": "It records the dataset version, target and pipeline configuration, judge model, prompt version, and evaluator configuration."
+      },
+      {
+        "question": "How should secrets be represented in a run?",
+        "answer": "Through environment-variable or secret-manager references, not stored secret values."
+      },
+      {
+        "question": "What should happen when evaluation settings change?",
+        "answer": "A new run should be created rather than mutating historical results."
+      },
+      {
+        "question": "Does reproducibility guarantee identical LLM outputs?",
+        "answer": "No, but it makes differences between runs explainable."
+      }
+    ]
+  }
+]

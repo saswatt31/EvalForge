@@ -1,0 +1,57 @@
+name: evalforge
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      EVALFORGE_ENVIRONMENT: development
+      EVALFORGE_DATABASE_URL: sqlite+aiosqlite:////data/evalforge.db
+      EVALFORGE_CORS_ORIGINS: '["http://localhost:3000"]'
+      EVALFORGE_WRITE_API_TOKEN: ${EVALFORGE_WRITE_API_TOKEN:-}
+      EVALFORGE_DEMO_MODE: ${EVALFORGE_DEMO_MODE:-false}
+      EVALFORGE_QDRANT_URL: http://qdrant:6333
+      EVALFORGE_QDRANT_API_KEY: ${EVALFORGE_QDRANT_API_KEY:-}
+      EVALFORGE_GROQ_API_KEY: ${EVALFORGE_GROQ_API_KEY:-}
+      EVALFORGE_GROQ_MODEL: ${EVALFORGE_GROQ_MODEL:-llama-3.3-70b-versatile}
+      EVALFORGE_OLLAMA_BASE_URL: ${EVALFORGE_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      EVALFORGE_OLLAMA_MODEL: ${EVALFORGE_OLLAMA_MODEL:-llama3.1}
+      EVALFORGE_JUDGE_PROVIDER: ${EVALFORGE_JUDGE_PROVIDER:-groq}
+      EVALFORGE_JUDGE_MODEL: ${EVALFORGE_JUDGE_MODEL:-llama-3.3-70b-versatile}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+    volumes:
+      - evalforge_data:/data
+    depends_on:
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  evalforge_data:
+  qdrant_storage:

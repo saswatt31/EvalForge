@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="EvalForge">
+  <rect width="64" height="64" rx="14" fill="#11171d"/>
+  <path d="M17 18h30v8H26v7h17v8H26v7h21v8H17V18Z" fill="#F4F0E8"/>
+  <path d="M46 18h7v30h-7z" fill="#F2A33C"/>
+  <path d="M17 46h36v4H17z" fill="#F2A33C"/>
+</svg>

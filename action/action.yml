@@ -1,0 +1,285 @@
+name: EvalForge RAG evaluation
+description: Run a golden dataset against a RAG target, enforce thresholds, and post a PR comment.
+author: EvalForge
+
+inputs:
+  api-url:
+    description: EvalForge API base URL, including /api/v1.
+    required: false
+    default: http://localhost:8000/api/v1
+  api-token:
+    description: Write token sent as X-API-Key.
+    required: false
+  dataset:
+    description: Path to a JSONL golden dataset in the checked-out repository.
+    required: true
+  name:
+    description: Run name. Defaults to the CLI-generated target name.
+    required: false
+    default: ""
+  target:
+    description: reference or http.
+    required: false
+    default: reference
+  url:
+    description: Query endpoint when target is http.
+    required: false
+    default: ""
+  streaming:
+    description: Request SSE streaming from an HTTP target.
+    required: false
+    default: "false"
+  provider:
+    description: Reference answer provider (mock, groq, or ollama).
+    required: false
+    default: mock
+  model:
+    description: Reference answer model override.
+    required: false
+    default: ""
+  top-k:
+    description: Reference retrieval top-k.
+    required: false
+    default: "5"
+  judge:
+    description: Judge mode (mock or llm).
+    required: false
+    default: mock
+  judge-provider:
+    description: LLM judge provider (groq or ollama).
+    required: false
+    default: groq
+  judge-model:
+    description: LLM judge model override.
+    required: false
+    default: ""
+  repeats:
+    description: Independent judge samples per metric.
+    required: false
+    default: "1"
+  warmup:
+    description: Warm-up queries excluded from measurement.
+    required: false
+    default: "0"
+  baseline:
+    description: Completed run ID to store as the baseline.
+    required: false
+    default: ""
+  min-context-recall:
+    description: Fail when context recall is below this value.
+    required: false
+    default: ""
+  min-faithfulness:
+    description: Fail when faithfulness is below this value.
+    required: false
+    default: ""
+  min-answer-relevance:
+    description: Fail when answer relevance is below this value.
+    required: false
+    default: ""
+  max-hallucination-rate:
+    description: Fail when hallucination rate is above this value.
+    required: false
+    default: ""
+  max-p95-latency-ms:
+    description: Fail when p95 target latency is above this value.
+    required: false
+    default: ""
+  timeout:
+    description: Maximum seconds to wait for a terminal run.
+    required: false
+    default: "1800"
+  poll-interval:
+    description: Seconds between status polls.
+    required: false
+    default: "2"
+  comment:
+    description: Post or update an EvalForge comment on the pull request.
+    required: false
+    default: "true"
+  github-token:
+    description: Token used to comment on the pull request. Defaults to github.token in the workflow step.
+    required: false
+  python-version:
+    description: Python version used to run the standalone CLI.
+    required: false
+    default: "3.11"
+  artifact-name:
+    description: Name for the uploaded run result and markdown artifact.
+    required: false
+    default: evalforge-results
+
+outputs:
+  run-id:
+    description: EvalForge run UUID.
+    value: ${{ steps.evaluate.outputs.run-id }}
+  status:
+    description: Terminal run status reported by EvalForge.
+    value: ${{ steps.evaluate.outputs.status }}
+  exit-code:
+    description: CLI exit code (0 pass, 1 threshold failure, 2 API/CLI error).
+    value: ${{ steps.evaluate.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install standalone CLI dependency
+      shell: bash
+      run: python -m pip install --disable-pip-version-check "httpx>=0.27,<1.0"
+
+    - name: Run evaluation
+      id: evaluate
+      continue-on-error: true
+      shell: bash
+      env:
+        API_URL: ${{ inputs.api-url }}
+        EVALFORGE_WRITE_API_TOKEN: ${{ inputs.api-token }}
+        DATASET: ${{ inputs.dataset }}
+        RUN_NAME: ${{ inputs.name }}
+        TARGET: ${{ inputs.target }}
+        TARGET_URL: ${{ inputs.url }}
+        STREAMING: ${{ inputs.streaming }}
+        PROVIDER: ${{ inputs.provider }}
+        MODEL: ${{ inputs.model }}
+        TOP_K: ${{ inputs.top-k }}
+        JUDGE: ${{ inputs.judge }}
+        JUDGE_PROVIDER: ${{ inputs.judge-provider }}
+        JUDGE_MODEL: ${{ inputs.judge-model }}
+        REPEATS: ${{ inputs.repeats }}
+        WARMUP: ${{ inputs.warmup }}
+        BASELINE: ${{ inputs.baseline }}
+        MIN_CONTEXT_RECALL: ${{ inputs.min-context-recall }}
+        MIN_FAITHFULNESS: ${{ inputs.min-faithfulness }}
+        MIN_ANSWER_RELEVANCE: ${{ inputs.min-answer-relevance }}
+        MAX_HALLUCINATION_RATE: ${{ inputs.max-hallucination-rate }}
+        MAX_P95_LATENCY_MS: ${{ inputs.max-p95-latency-ms }}
+        TIMEOUT: ${{ inputs.timeout }}
+        POLL_INTERVAL: ${{ inputs.poll-interval }}
+        GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        GIT_BRANCH: ${{ github.head_ref || github.ref_name }}
+        PULL_REQUEST: ${{ github.event.pull_request.number }}
+        MARKDOWN_PATH: ${{ runner.temp }}/evalforge-comment.md
+        RESULT_PATH: ${{ runner.temp }}/evalforge-run.json
+        LOG_PATH: ${{ runner.temp }}/evalforge-run.log
+      run: |
+        set -u
+
+        cli=(python "$GITHUB_ACTION_PATH/../backend/app/cli.py")
+        args=(run --dataset "$DATASET" --json --markdown "$MARKDOWN_PATH")
+        args+=(--api-url "$API_URL" --target "$TARGET" --provider "$PROVIDER")
+        args+=(--top-k "$TOP_K" --judge "$JUDGE" --judge-provider "$JUDGE_PROVIDER")
+        args+=(--repeats "$REPEATS" --warmup "$WARMUP" --source ci)
+        args+=(--timeout "$TIMEOUT" --poll-interval "$POLL_INTERVAL")
+
+        if [ -n "$RUN_NAME" ]; then args+=(--name "$RUN_NAME"); fi
+        if [ -n "$TARGET_URL" ]; then args+=(--url "$TARGET_URL"); fi
+        if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
+        if [ -n "$JUDGE_MODEL" ]; then args+=(--judge-model "$JUDGE_MODEL"); fi
+        if [ -n "$BASELINE" ]; then args+=(--baseline "$BASELINE"); fi
+        if [ -n "$MIN_CONTEXT_RECALL" ]; then args+=(--min-context-recall "$MIN_CONTEXT_RECALL"); fi
+        if [ -n "$MIN_FAITHFULNESS" ]; then args+=(--min-faithfulness "$MIN_FAITHFULNESS"); fi
+        if [ -n "$MIN_ANSWER_RELEVANCE" ]; then args+=(--min-answer-relevance "$MIN_ANSWER_RELEVANCE"); fi
+        if [ -n "$MAX_HALLUCINATION_RATE" ]; then args+=(--max-hallucination-rate "$MAX_HALLUCINATION_RATE"); fi
+        if [ -n "$MAX_P95_LATENCY_MS" ]; then args+=(--max-p95-latency-ms "$MAX_P95_LATENCY_MS"); fi
+        if [ "$STREAMING" = "true" ]; then args+=(--streaming); fi
+        if [ -n "$GIT_SHA" ]; then args+=(--git-sha "$GIT_SHA"); fi
+        if [ -n "$GIT_BRANCH" ]; then args+=(--git-branch "$GIT_BRANCH"); fi
+        if [ -n "$PULL_REQUEST" ]; then args+=(--pull-request "$PULL_REQUEST"); fi
+
+        set +e
+        "${cli[@]}" "${args[@]}" > "$RESULT_PATH" 2> "$LOG_PATH"
+        code=$?
+        set -e
+
+        run_id=$(python -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8')).get('id', ''))" "$RESULT_PATH" 2>/dev/null || true)
+        status=$(python -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8')).get('status', 'unknown'))" "$RESULT_PATH" 2>/dev/null || true)
+        if [ -z "$status" ]; then status="unavailable"; fi
+
+        {
+          echo "run-id=$run_id"
+          echo "status=$status"
+          echo "exit-code=$code"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "::group::EvalForge CLI log"
+        cat "$LOG_PATH" 2>/dev/null || true
+        echo "::endgroup::"
+
+        if [ ! -s "$MARKDOWN_PATH" ]; then
+          {
+            echo "## EvalForge evaluation"
+            echo ""
+            echo "**Status:** evaluation did not complete (exit code \`$code\`)."
+            echo ""
+            echo "\`\`\`text"
+            tail -n 40 "$LOG_PATH" 2>/dev/null || echo "No CLI log was produced."
+            echo "\`\`\`"
+          } > "$MARKDOWN_PATH"
+        fi
+
+        gate="passed"
+        if [ "$code" -ne 0 ]; then gate="failed"; fi
+        printf '\n\n**Gate:** %s (exit code `%s`).\n' "$gate" "$code" >> "$MARKDOWN_PATH"
+        cat "$MARKDOWN_PATH" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload EvalForge results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ runner.temp }}/evalforge-comment.md
+          ${{ runner.temp }}/evalforge-run.json
+          ${{ runner.temp }}/evalforge-run.log
+        if-no-files-found: ignore
+        retention-days: 14
+
+    - name: Comment on pull request
+      if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && github.event.pull_request.number
+      uses: actions/github-script@v7
+      env:
+        EVALFORGE_MARKDOWN: ${{ runner.temp }}/evalforge-comment.md
+        EVALFORGE_WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      with:
+        github-token: ${{ inputs.github-token || github.token }}
+        script: |
+          const fs = require("fs");
+          const marker = "<!-- evalforge-evaluation -->";
+          let body = fs.readFileSync(process.env.EVALFORGE_MARKDOWN, "utf8");
+          body += `\n\n[Workflow run](${process.env.EVALFORGE_WORKFLOW_URL})`;
+          const issue_number = context.payload.pull_request.number;
+          const params = {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number,
+            per_page: 100,
+          };
+          const comments = await github.paginate(github.rest.issues.listComments, params);
+          const previous = comments.find((comment) => comment.body?.includes(marker));
+          const payload = {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `${marker}\n${body}`,
+          };
+          if (previous) {
+            await github.rest.issues.updateComment({ ...payload, comment_id: previous.id });
+          } else {
+            await github.rest.issues.createComment({ ...payload, issue_number });
+          }
+
+    - name: Enforce evaluation gate
+      if: always()
+      shell: bash
+      env:
+        EXIT_CODE: ${{ steps.evaluate.outputs.exit-code }}
+      run: |
+        if [ -z "$EXIT_CODE" ]; then
+          echo "EvalForge did not record an exit code." >&2
+          exit 1
+        fi
+        exit "$EXIT_CODE"
