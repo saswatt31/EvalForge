@@ -68,6 +68,9 @@ async def create_run(
     session: AsyncSession,
     settings: Settings,
     payload: RunCreate,
+    *,
+    client_ip_hash: str | None = None,
+    max_queries: int | None = None,
 ) -> Run:
     version = await session.get(DatasetVersion, payload.dataset_version_id)
     if version is None:
@@ -82,6 +85,10 @@ async def create_run(
         and settings.groq_api_key is None
     ):
         raise RunServiceError("LLM judging with Groq requires EVALFORGE_GROQ_API_KEY")
+
+    total_queries = version.item_count
+    if max_queries is not None:
+        total_queries = min(total_queries, max_queries)
 
     run = Run(
         dataset_version_id=payload.dataset_version_id,
@@ -103,7 +110,8 @@ async def create_run(
         git_sha=payload.git_sha,
         git_branch=payload.git_branch,
         pull_request_number=payload.pull_request_number,
-        total_queries=version.item_count,
+        client_ip_hash=client_ip_hash,
+        total_queries=total_queries,
     )
     session.add(run)
     await session.commit()

@@ -20,6 +20,14 @@ async def test_health_returns_version_and_environment(client: AsyncClient) -> No
     }
 
 
+async def test_root_health_is_available_for_render(client: AsyncClient) -> None:
+    response = await client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["service"] == "EvalForge API"
+
+
 async def test_readiness_checks_database(client: AsyncClient) -> None:
     response = await client.get("/api/v1/health/ready")
 

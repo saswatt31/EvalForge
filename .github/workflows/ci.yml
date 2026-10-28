@@ -66,6 +66,83 @@ jobs:
             backend/htmlcov/
           retention-days: 7
 
+  postgres:
+    name: Postgres migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      EVALFORGE_ENVIRONMENT: test
+      EVALFORGE_DATABASE_URL: postgresql+asyncpg://evalforge:evalforge@127.0.0.1:5432/evalforge
+      EVALFORGE_DATABASE_SSL: "false"
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: evalforge
+          POSTGRES_PASSWORD: evalforge
+          POSTGRES_DB: evalforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U evalforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Apply migrations to Postgres
+        run: |
+          alembic upgrade head
+          alembic current
+
+      - name: Verify the schema is queryable through asyncpg
+        run: |
+          python - <<'PY'
+          import asyncio
+
+          from sqlalchemy import text
+          from sqlalchemy.ext.asyncio import create_async_engine
+
+          from app.core.config import get_settings
+
+          async def main() -> None:
+              engine = create_async_engine(get_settings().database_url)
+              async with engine.connect() as connection:
+                  tables = await connection.scalar(
+                      text(
+                          "select count(*) from information_schema.tables "
+                          "where table_schema = 'public'"
+                      )
+                  )
+                  columns = await connection.scalar(
+                      text(
+                          "select count(*) from information_schema.columns "
+                          "where table_name = 'runs' and column_name = 'client_ip_hash'"
+                      )
+                  )
+              await engine.dispose()
+              assert tables and tables >= 6, tables
+              assert columns == 1, columns
+              print(f"Postgres schema ready: {tables} tables, client_ip_hash present")
+
+          asyncio.run(main())
+          PY
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
@@ -145,6 +222,60 @@ jobs:
             frontend/playwright-report/
             frontend/test-results/
           retention-days: 7
+
+  e2e-recorded:
+    name: Recorded E2E (backend off)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run recorded E2E
+        run: npm run test:e2e:recorded
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-recorded-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
+
+  secrets:
+    name: Full-history secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz | tar -xz
+          ./gitleaks version
+
+      - name: Scan every commit
+        run: ./gitleaks detect --source . --log-opts="--all" --redact --verbose
 
   compose:
     name: Compose config

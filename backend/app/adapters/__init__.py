@@ -1,4 +1,5 @@
-from app.adapters.base import AdapterError, RAGTarget, TargetResponse
-from app.adapters.factory import build_target
+"""RAG target adapters.
 
-__all__ = ["AdapterError", "RAGTarget", "TargetResponse", "build_target"]
+Import concrete adapters from their modules (``app.adapters.factory``) to keep package
+initialization from forming an import cycle with ``app.reference``.
+"""

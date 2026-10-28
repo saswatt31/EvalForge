@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -79,3 +80,44 @@ def test_extractive_answer_returns_evidence_sentence() -> None:
     retrieved = lexical_retrieve(documents, "How does context recall work?", limit=2)
     answer = extractive_answer("How does context recall work?", retrieved)
     assert "context recall" in answer.lower()
+
+
+def test_ensure_indexed_is_idempotent_when_collection_is_complete(tmp_path: Path) -> None:
+    documents = load_corpus(BACKEND_ROOT / "data" / "reference_corpus.json")
+    index = QdrantReferenceIndex(
+        collection_name="idempotent_test",
+        qdrant_url=None,
+        qdrant_api_key=None,
+        local_path=tmp_path / "qdrant-idempotent",
+    )
+    index.client.close()
+
+    calls: list[str] = []
+
+    class CompleteCollectionClient:
+        def collection_exists(self, _name: str) -> bool:
+            calls.append("exists")
+            return True
+
+        def count(self, _name: str, *, exact: bool) -> SimpleNamespace:
+            assert exact is True
+            calls.append("count")
+            return SimpleNamespace(count=len(documents))
+
+        def delete_collection(self, _name: str) -> None:
+            raise AssertionError("a complete collection must not be deleted")
+
+        def create_collection(self, **_kwargs: object) -> None:
+            raise AssertionError("a complete collection must not be recreated")
+
+        def upsert(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("a complete collection must not be re-upserted")
+
+        def close(self) -> None:
+            calls.append("close")
+
+    index.client = CompleteCollectionClient()  # type: ignore[assignment]
+    index.ensure_indexed(documents)
+    index.close()
+
+    assert calls == ["exists", "count", "close"]

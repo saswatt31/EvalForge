@@ -63,4 +63,5 @@ def test_settings(tmp_path: Path) -> Settings:
         qdrant_url=None,
         qdrant_local_path=tmp_path / "qdrant",
         database_url="sqlite+aiosqlite:///:memory:",
+        reference_index_on_startup=False,
     )

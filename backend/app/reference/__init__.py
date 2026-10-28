@@ -1,14 +1,5 @@
-from app.reference.embedding import HashEmbedding, content_tokens, lexical_overlap
-from app.reference.index import QdrantReferenceIndex, RetrievedDocument, lexical_retrieve
-from app.reference.target import ReferenceRAGTarget, extractive_answer
+"""Bundled reference corpus, embedding, retrieval, and target.
 
-__all__ = [
-    "HashEmbedding",
-    "QdrantReferenceIndex",
-    "ReferenceRAGTarget",
-    "RetrievedDocument",
-    "content_tokens",
-    "extractive_answer",
-    "lexical_overlap",
-    "lexical_retrieve",
-]
+Import concrete helpers from their modules (``app.reference.target``) to keep package
+initialization from forming an import cycle with ``app.adapters``.
+"""

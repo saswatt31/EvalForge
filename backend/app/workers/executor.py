@@ -120,6 +120,9 @@ class RunExecutor:
             if run is None or await self._is_cancelled(session, run_id):
                 return
 
+            # A free-tier mini-suite caps total_queries below the dataset version's item count.
+            items = items[: run.total_queries]
+
             for item in items[: run.warmup_count]:
                 await self._with_request_timeout(
                     target.query,

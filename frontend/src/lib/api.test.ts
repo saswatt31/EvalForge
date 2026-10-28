@@ -4,11 +4,13 @@ import {
   API_BASE,
   ApiError,
   apiGet,
+  apiPost,
   getWriteToken,
   hasWriteToken,
   setWriteToken,
   subscribeWriteToken,
 } from "./api";
+import { activateRecorded, resetBackendForTests } from "./backend";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -20,6 +22,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 describe("API client", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    resetBackendForTests();
     vi.unstubAllGlobals();
   });
 
@@ -113,6 +116,33 @@ describe("API client", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
 
     await expect(apiGet("/runs/example/cancel")).resolves.toBeUndefined();
+  });
+
+  it("serves recorded data without touching the network once the demo is active", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    activateRecorded("rate_limited");
+
+    const runs = await apiGet<{ total: number; items: Array<{ source: string }> }>(
+      "/runs?limit=10",
+    );
+
+    expect(runs.total).toBe(2);
+    expect(runs.items.every((run) => run.source === "demo")).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects writes in recorded mode with a read-only error", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    activateRecorded("waking_timeout");
+
+    const error = await apiPost("/runs", {}).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(403);
+    expect((error as ApiError).message).toContain("recorded demo");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("notifies subscribers when the write token changes", () => {

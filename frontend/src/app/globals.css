@@ -397,6 +397,97 @@ code {
   text-transform: uppercase;
 }
 
+.recorded-banner {
+  justify-content: flex-start;
+  border-bottom-color: rgba(130, 189, 215, 0.2);
+  background: rgba(130, 189, 215, 0.075);
+  color: #b6cfda;
+  text-align: left;
+}
+
+.recorded-banner .demo-pill {
+  border-color: rgba(130, 189, 215, 0.35);
+  color: var(--blue);
+}
+
+.recorded-banner .button {
+  margin-left: auto;
+}
+
+.button.tiny {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 0.68rem;
+}
+
+.boot-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.boot-card {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  width: min(560px, 100%);
+  padding: clamp(22px, 5vw, 34px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.boot-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.boot-brand div {
+  display: grid;
+  line-height: 1.25;
+}
+
+.boot-brand span {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.boot-spinner {
+  width: 22px;
+  height: 22px;
+  margin-top: 6px;
+}
+
+.boot-card h1 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.boot-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.boot-card .boot-timeout {
+  color: var(--muted-strong);
+}
+
+.boot-card small {
+  color: #6b777e;
+  font-size: 0.68rem;
+  line-height: 1.55;
+}
+
+.boot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -1898,6 +1989,11 @@ code {
 
 .summary-note.warning {
   color: var(--warning);
+}
+
+.summary-inline {
+  color: var(--muted);
+  font-size: 0.62rem;
 }
 
 .field {

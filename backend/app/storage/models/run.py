@@ -47,6 +47,8 @@ class Run(Base, TimestampMixin):
         CheckConstraint("judge_repeats >= 1", name="judge_repeats_positive"),
         CheckConstraint("warmup_count >= 0", name="warmup_count_nonnegative"),
         Index("ix_runs_status_created_at", "status", "created_at"),
+        Index("ix_runs_created_at", "created_at"),
+        Index("ix_runs_client_ip_hash_created_at", "client_ip_hash", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=new_uuid)
@@ -83,6 +85,8 @@ class Run(Base, TimestampMixin):
     git_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
     git_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pull_request_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # SHA-256 of the caller's IP plus a deployment salt. Used only for the live-run rate limit.
+    client_ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     total_queries: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completed_queries: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

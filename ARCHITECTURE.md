@@ -31,7 +31,7 @@ Invariants:
 - Provider secrets are never stored in configuration JSON. Optional target headers are persisted
   with the run so the worker can authenticate later, but header values are masked in API responses.
 - The API computes a canonical configuration hash before the run is queued.
-- One process owns the queue and SQLite writer in v1.
+- One process owns the queue and the metadata writer in v1.
 
 ## 2. System topology
 
@@ -59,6 +59,25 @@ from the critical path, keeps progress and run history in one database, and make
 to run end to end. The cost is that the API must run as a single process and a process crash
 interrupts in-flight work.
 
+The hosted free-tier topology keeps the same process model but replaces local dependencies with
+managed free services:
+
+```mermaid
+flowchart LR
+    Browser["Vercel dashboard"] -->|HTTPS /api/v1| API["Render Docker service"]
+    CLI["evalforge CLI"] -->|HTTPS| API
+    API --> DB[("Neon or Supabase Postgres")]
+    API --> Worker["In-process worker"]
+    Worker --> Qdrant[("Qdrant Cloud free cluster")]
+    Worker --> Judge["Mock or Groq judge"]
+    Worker --> DB
+    Browser -.->|API asleep or paused| Recorded["Committed recorded demo"]
+```
+
+The Render container is stateless: Postgres owns metadata and run history, and Qdrant Cloud owns
+the reference vectors. Render's ephemeral disk only holds container-local scratch. The browser
+reaches Render directly, so CORS is locked to the Vercel origin.
+
 ## 3. Component boundaries
 
 | Component | Responsibility | Does not do |
@@ -68,7 +87,7 @@ interrupts in-flight work.
 | `app/adapters` | Call JSON/SSE RAG targets and time responses | Score quality |
 | `app/providers` | Stream Groq/Ollama/mock completions with usage | Know datasets or runs |
 | `app/evaluators` | Normalize Ragas/mock judgments and implement the cache | Mutate run lifecycle |
-| `app/reference` | Synthetic corpus, hash embedding, Qdrant index, reference RAG | Handle external targets |
+| `app/reference` | Synthetic corpus, hash embedding, Qdrant index, startup bootstrap, reference RAG | Handle external targets |
 | `app/workers` | Consume the queue, execute items, persist progress | Render API responses |
 | `app/storage` | SQLAlchemy engine, sessions, models | Call external services |
 | `app/schemas` | Pydantic API/domain contracts | Store data |
@@ -107,15 +126,17 @@ message.
 
 ## 5. Persistence model
 
-SQLite via SQLAlchemy async is the metadata store. Alembic owns the schema. WAL, foreign keys, and
-a 5-second busy timeout are enabled on connect.
+SQLAlchemy async is the metadata layer. Alembic owns the schema. Local work uses SQLite with WAL,
+foreign keys, and a 5-second busy timeout. Deployment uses managed Postgres; the settings layer
+normalizes `postgres://` and `postgresql://` to `postgresql+asyncpg://`, strips libpq-only query
+parameters, and enables TLS with `EVALFORGE_DATABASE_SSL`. The same migrations run on both.
 
 | Table | Purpose | Important constraints |
 | --- | --- | --- |
 | `datasets` | Logical dataset name | Unique name |
 | `dataset_versions` | Immutable content snapshots | Unique `(dataset_id, version_number)` and `(dataset_id, content_hash)` |
 | `dataset_items` | Ordered questions, ground truth, reference contexts | Unique `(dataset_version_id, ordinal)` |
-| `runs` | Configuration snapshot, lifecycle, progress, provenance | Snapshot JSON is immutable; counts non-negative |
+| `runs` | Configuration snapshot, lifecycle, progress, provenance, optional `client_ip_hash` | Snapshot JSON is immutable; counts non-negative; indexed by `(client_ip_hash, created_at)` and `created_at` |
 | `query_results` | One target call per dataset item | Unique `(run_id, dataset_item_id)`; TTFT provenance check |
 | `metric_scores` | One judgment per item/metric/repeat | Unique `(query_result_id, metric_name, sample_index)` |
 | `judge_cache` | Cross-run cache of successful judgments | Unique cache key; no foreign key to a run |
@@ -291,24 +312,26 @@ hidden assumption in the current code.
 
 ## 13. API surface
 
-All routes are under `/api/v1`.
+All versioned routes are under `/api/v1`. The unauthenticated liveness route `/health` also exists at
+the service root for Render and container checks.
 
 | Method and path | Purpose | Write protected |
 | --- | --- | --- |
-| `GET /health` | Liveness and version | No |
-| `GET /health/ready` | Database readiness, HTTP 503 when unavailable | No |
-| `GET /meta` | Demo/auth/provider capabilities and limits | No |
-| `GET /datasets` | Dataset catalogue with latest version | No |
-| `GET /datasets/sample` | Download the bundled JSONL | No |
-| `POST /datasets` | Validate and import a dataset/version | Yes |
-| `GET /datasets/{id}` | Latest version and its items | No |
-| `GET /runs` | Filterable, paginated run list | No |
-| `POST /runs` | Create and enqueue a run | Yes |
-| `GET /runs/{id}` | Run summary and aggregates | No |
-| `GET /runs/{id}/status` | Lightweight progress polling | No |
-| `GET /runs/{id}/results` | Paginated per-query evidence | No |
-| `POST /runs/{id}/cancel` | Request cooperative cancellation | Yes |
-| `GET /runs/compare` | Compare two completed or in-progress runs | No |
+| `GET /health` (service root) | Root liveness for Render and Docker health checks | No |
+| `GET /api/v1/health` | Version and environment | No |
+| `GET /api/v1/health/ready` | Database readiness, HTTP 503 when unavailable | No |
+| `GET /api/v1/meta` | Demo/auth/provider capabilities and live-run policy | No |
+| `GET /api/v1/datasets` | Dataset catalogue with latest version | No |
+| `GET /api/v1/datasets/sample` | Download the bundled JSONL | No |
+| `POST /api/v1/datasets` | Validate and import a dataset/version | Yes |
+| `GET /api/v1/datasets/{id}` | Latest version and its items | No |
+| `GET /api/v1/runs` | Filterable, paginated run list | No |
+| `POST /api/v1/runs` | Create and enqueue a run; 429 when live limits pause | Yes |
+| `GET /api/v1/runs/{id}` | Run summary and aggregates | No |
+| `GET /api/v1/runs/{id}/status` | Lightweight progress polling | No |
+| `GET /api/v1/runs/{id}/results` | Paginated per-query evidence | No |
+| `POST /api/v1/runs/{id}/cancel` | Request cooperative cancellation | Yes |
+| `GET /api/v1/runs/compare` | Compare two completed or in-progress runs | No |
 
 The API returns Pydantic models directly. OpenAPI is generated at `/openapi.json`, and Swagger UI
 is at `/docs`.
@@ -333,6 +356,14 @@ SWR handles fetch/cache/revalidation. Active runs poll status and refresh their 
 is kept in `sessionStorage` and is never sent to the Next.js server. Responsive CSS switches to a
 drawer navigation at narrow widths; E2E covers the mobile journey.
 
+A backend gate runs before the shell renders. It probes `/api/v1/health` and the metadata endpoint;
+if the backend is asleep it shows a waking screen, and after
+`NEXT_PUBLIC_BACKEND_WAKE_TIMEOUT_MS` (20 seconds by default) it switches the whole app into
+recorded mode. An unreachable API or a `live_runs_paused` 429 does the same. Recorded mode serves
+`frontend/src/lib/recorded-demo.json` through a resolver that mirrors the read-only API shapes,
+disables writes, and renders a permanent **Recorded** banner on every route. SWR keys include the
+live/recorded scope so a retry refetches instead of showing cached data from the other mode.
+
 ## 15. Deployment
 
 Local and container topology:
@@ -347,13 +378,36 @@ The backend image runs Alembic before Uvicorn, uses a non-root user, and exposes
 web image uses Next.js standalone output. Compose passes the write token, demo flag, Qdrant URL,
 Groq key, and Ollama host URL through environment variables.
 
-For a hosted deployment, use one API instance, a persistent SQLite volume, and Qdrant Cloud or a
-private Qdrant service. Vercel can host the frontend but not the API: the API needs a long-running
-worker, a persistent file, streaming provider calls, and Qdrant connectivity.
+The hosted free-tier topology is:
+
+- Vercel serves the Next.js dashboard;
+- one Render free Docker service runs the API and the in-process worker;
+- Neon or Supabase hosts Postgres;
+- Qdrant Cloud hosts the reference collection;
+- `frontend/src/lib/recorded-demo.json` provides the offline fallback.
+
+Render services sleep after inactivity, so the first request can take 30-60 seconds. The API is
+stateless beyond Postgres and Qdrant; the container's ephemeral disk is not a data store. The
+`render.yaml` blueprint sets `EVALFORGE_LIVE_RUN_PROTECTION=true`, a 10-query mini-suite, a
+per-network limit of 3 runs per 60 minutes, a 20-run UTC daily cap, and a generated write token and
+IP-hash salt. CORS accepts only the configured Vercel origin and rejects `*` in production.
 
 Read-only demo deployments set `EVALFORGE_DEMO_MODE=true`. On an empty database the API seeds two
 synthetic runs from the sample data, marks them `source=demo`, and blocks writes. No provider,
 judge, or Qdrant call is needed to view the demo.
+
+The recorded fallback is generated, not hand-written:
+
+```powershell
+Set-Location backend
+.\.venv\Scripts\Activate.ps1
+python -m scripts.export_recorded_demo
+```
+
+The exporter uses the real demo seed, metadata builder, dataset/run services, and comparison
+service, then writes the JSON consumed by the dashboard. Regenerate and commit it when the seed or a
+response schema changes. `DEPLOYMENT.md` has the click-by-click account and verification steps;
+`DECISIONS.md` records why the deployment is shaped this way.
 
 ## 16. Failure handling
 
@@ -369,6 +423,9 @@ judge, or Qdrant call is needed to view the demo.
 | Missing TTFT | Null, not inferred from total latency |
 | SQLite contention | WAL, foreign keys, busy timeout, one writer; single process required |
 | Missing Groq key | Reject LLM-judge run creation with an actionable error |
+| Render cold start | Dashboard shows waking state; recorded demo after the wake timeout |
+| Live-run limit reached | HTTP 429 with `live_runs_paused`, reason, and `Retry-After`; recorded demo |
+| Qdrant unavailable at startup | Log the failure, keep `/health` and reads up; reference runs retry and surface the error |
 
 The CI gate is strict rather than statistical: threshold failures return exit code 1, a partial or
 failed run returns 1, and an API/CLI error returns 2. Without explicit thresholds the CLI only
@@ -379,27 +436,36 @@ report and API, but is not a separate configurable threshold in v1.
 
 Local verification of this tree:
 
-- 85 backend tests, 86.83% branch coverage, 80% coverage floor;
+- 99 backend tests, 86.16% branch coverage, 80% coverage floor;
 - Ruff lint and format checks clean;
 - strict mypy clean for `app` and `tests`;
-- Alembic initial migration applied against SQLite;
-- 22 Vitest/React Testing Library tests;
+- Alembic migrations applied against SQLite; a CI Postgres service applies the same head and checks
+  the `runs.client_ip_hash` column through asyncpg;
+- 35 Vitest/React Testing Library tests;
 - ESLint and TypeScript clean;
 - Next.js production build successful;
-- 2 Playwright tests: full dataset import/run/compare flow and mobile navigation;
+- 4 Playwright tests: full dataset import/run/compare flow, mobile navigation, backend-off recorded
+  fallback with a permanent banner, and immediate recorded mode from the waking screen;
+- a full-history gitleaks job in CI;
 - action shell path executed against the live API, producing a successful run, markdown report, and
   zero exit code.
 
 The mock judge makes CI deterministic. No test calls a paid provider. Real Groq/Ollama paths have
 unit coverage with fakes but were not exercised live because no key or local model was available.
 
-Docker Compose and the GitHub-hosted workflow were not executed in the authoring environment;
-Docker was unavailable. The Compose file is validated in CI. The GitHub Action's PR-comment step
-requires a GitHub runner and repository permissions and was not exercised locally.
+Docker Compose was not executed in the authoring environment; Docker was unavailable. The Compose
+file is validated in CI, and the Render Docker build is exercised during deployment. The GitHub
+Action's PR-comment step requires a GitHub runner and repository permissions and was not exercised
+locally.
 
 ## 18. Security and privacy
 
 - A single shared write token is an access gate, not multi-user identity or authorization.
+- The live-run limiter stores a salted SHA-256 of the caller's IP, never the raw address. The salt is
+  a secret supplied through `EVALFORGE_LIVE_RUN_IP_HASH_SALT`, and rotating it breaks continuity with
+  old hashes.
+- CORS is restricted to explicit origins and wildcard origins are rejected in production. CORS is not
+  authentication.
 - Never expose an unauthenticated API that can spend provider credits or reach internal targets.
 - User-supplied target URLs are not SSRF-filtered. A hosted deployment must block loopback,
   link-local, and private ranges unless explicitly allowlisted.
@@ -416,19 +482,20 @@ requires a GitHub runner and repository permissions and was not exercised locall
 ## 19. Scaling path
 
 The current design is for a single team and a single API process. At 10,000 queries the first
-bottlenecks are judge cost and wall time, not SQLite row size.
+bottlenecks are judge cost and wall time, not metadata row size.
 
 Reasonable next steps, in order:
 
 1. Add a durable queue (ARQ/Celery with Redis or a cloud queue) and a separate worker deployment.
-2. Move metadata to PostgreSQL before adding API replicas.
+2. Move the live-run limiter from process-local locking to a database constraint or distributed
+   lock before adding API replicas.
 3. Add batch writes for metric samples and progress updates.
 4. Add provider concurrency limits, retries with backoff, and per-run cost budgets.
 5. Store large contexts/judge evidence in object storage if retention grows.
 6. Add a strict comparison compatibility policy and paired bootstrap intervals for regressions.
 
-Until then, running multiple Uvicorn workers would create multiple queues and compete for SQLite
-writes. That is a known limitation, not an invitation to scale this deployment shape.
+Until then, running multiple Uvicorn workers would create multiple queues. That is a known
+limitation, not an invitation to scale this deployment shape.
 
 ## 20. Deliberate limitations
 
@@ -443,8 +510,15 @@ writes. That is a known limitation, not an invitation to scale this deployment s
 - Thresholds are strict and have no tolerance or confidence interval.
 - Judge failures reduce metric coverage rather than changing the run's target-level status.
 - The judge cache has no automatic expiry.
-- There is no multi-user auth, SSRF guard, rate limit, or provider budget enforcement.
-- The in-process queue and SQLite restrict the system to one instance.
+- There is no multi-user auth, SSRF guard, or provider budget enforcement. The public deployment
+  relies on a shared write token and a coarse per-network/daily live-run cap, not on per-user
+  identity or billing controls.
+- The in-process queue and single API instance restrict the system to one instance. Production uses
+  Postgres, but horizontal scaling still needs a durable queue.
+- Render free services sleep, so cold-start latency is part of the product experience and the
+  recorded fallback is a required path, not a nice-to-have.
+- The recorded demo is a committed snapshot of synthetic data. It is never presented as live, and
+  it does not prove anything about a real RAG system.
 - p99 is intentionally omitted because the sample sizes are small.
 - Docker/GitHub-live verification remains a deployment-environment task.
 

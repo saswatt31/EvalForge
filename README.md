@@ -9,9 +9,15 @@ dashboard, SQLAlchemy/Alembic persistence, Qdrant reference retrieval, Groq/Olla
 LLM judge with caching, a standalone CLI, a composite GitHub Action, Playwright E2E tests, and a
 read-only demo mode.
 
-[Architecture](ARCHITECTURE.md) | [Core functions](CORE_FUNCTIONS.md) |
-[Interview notes](INTERVIEW_PREP.md) | [GitHub Action](action/README.md) |
-[API docs](http://localhost:8000/docs) after starting the API
+The repository also ships a zero-cost hosted topology: Vercel for the dashboard, one Render free
+Docker service for the API and worker, free Postgres for metadata, and a Qdrant Cloud free cluster.
+Live runs are capped, and when the backend is asleep or paused the dashboard opens a committed
+recorded demo with a permanent banner. See [DEPLOYMENT.md](DEPLOYMENT.md) for the click-by-click
+setup and [DECISIONS.md](DECISIONS.md) for the trade-offs.
+
+[Architecture](ARCHITECTURE.md) | [Deployment](DEPLOYMENT.md) | [Decisions](DECISIONS.md) |
+[Core functions](CORE_FUNCTIONS.md) | [Interview notes](INTERVIEW_PREP.md) |
+[GitHub Action](action/README.md) | [API docs](http://localhost:8000/docs) after starting the API
 
 ![Dashboard overview](docs/screenshots/overview.png)
 
@@ -55,8 +61,14 @@ not the quality of any real RAG system.
 - Composite GitHub Action that runs the CLI, enforces thresholds, uploads artifacts, and upserts a
   pull-request comment.
 - Read-only demo mode seeded without provider calls.
-- 85 backend tests, 22 frontend tests, 2 Playwright flows, an 80% backend coverage floor, and CI for
-  lint, types, migrations, tests, builds, and E2E.
+- Free-tier guardrails: a 10-query mini-suite, a salted per-network rate limit, a global UTC daily
+  cap, judge-result caching, and an explicit `live_runs_paused` response.
+- Dashboard fallback that detects a sleeping or paused backend, shows a waking state, then opens a
+  committed recorded export with a permanent **Recorded** banner.
+- SQLite for local work and managed Postgres for deployment, both through Alembic.
+- 99 backend tests, 35 frontend tests, 4 Playwright flows, an 80% backend coverage floor, and CI for
+  lint, types, SQLite and Postgres migrations, tests, builds, E2E, the backend-off fallback, and a
+  full-history secret scan.
 
 ## Screenshots
 
@@ -68,13 +80,14 @@ not the quality of any real RAG system.
 
 ## Stack
 
-- **API:** Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2 async, Alembic, SQLite (WAL).
+- **API:** Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2 async, Alembic, SQLite locally and
+  Postgres in deployment.
 - **Evaluation:** Ragas 0.4.3, LangChain 0.3, Groq/Ollama through an OpenAI-compatible client.
 - **Retrieval:** Qdrant with a deterministic 384-dimension hash embedding for offline reference
-  runs.
+  runs; embedded locally and Qdrant Cloud when deployed.
 - **Web:** Next.js 15 App Router, React 19, TypeScript, SWR, custom CSS.
 - **Verification:** pytest, Ruff, mypy, Vitest, React Testing Library, Playwright.
-- **Delivery:** Docker Compose, GitHub Actions, composite action.
+- **Delivery:** Docker Compose, Render Blueprint, Vercel, GitHub Actions, composite action.
 
 ## Quickstart
 
@@ -188,6 +201,39 @@ The backend image includes the sample corpus and dataset. Docker is not installe
 authoring environment, so Compose was not executed locally; the configuration is validated in CI.
 Run it on a Docker host before publishing a deployment.
 
+### Hosted free-tier deployment
+
+`render.yaml` describes the hosted backend. The topology is deliberately small:
+
+- **Vercel** serves the Next.js dashboard.
+- **Render** runs one free Docker service with the API and the in-process worker.
+- **Neon or Supabase** provides Postgres. `EVALFORGE_DATABASE_URL` accepts `postgres://`,
+  `postgresql://`, or `postgresql+asyncpg://`; TLS is controlled by `EVALFORGE_DATABASE_SSL`.
+- **Qdrant Cloud** holds the 28-document reference collection. The API indexes it on startup only
+  when it is empty.
+- **`frontend/src/lib/recorded-demo.json`** is a committed export of the synthetic demo. It is
+  loaded only when the live API is unavailable or paused.
+
+Live-run protections are enabled by `render.yaml`: at most 10 queries per run, 3 runs per network
+per 60 minutes, and 20 runs per UTC day across all visitors. When a limit is reached, `POST /runs`
+returns HTTP 429 with `detail.code = "live_runs_paused"` and a `Retry-After` header.
+
+Render free services sleep after inactivity, so the first request can take 30-60 seconds. The
+dashboard waits up to `NEXT_PUBLIC_BACKEND_WAKE_TIMEOUT_MS` (20 seconds by default), then opens the
+recorded demo and keeps a **Recorded** banner until the user retries. The banner states plainly
+that nothing on the screen is a live run or measurement.
+
+What is live versus recorded:
+
+- **Live:** dataset import, run creation, the 10-query evaluation, per-query latency and judge
+  evidence, comparison, and run history in Postgres. These screens never carry the recorded banner.
+- **Recorded:** only the committed export, always labelled **Recorded** and **Synthetic demo**. It
+  is generated by `backend/scripts/export_recorded_demo.py` from the deterministic demo seed, not
+  typed by hand.
+
+[DEPLOYMENT.md](DEPLOYMENT.md) covers account creation, environment variables, CORS ordering,
+deployment, verification, cold starts, and rotation. No secret belongs in this repository.
+
 ## HTTP target contract
 
 POST `{"question": "..."}` to the configured URL. A non-streaming target returns:
@@ -260,9 +306,11 @@ artifact details. The action does not host EvalForge; it calls an API reachable 
 Local results on the completed tree:
 
 ```text
-Backend    85 pytest tests, 86.83% coverage, Ruff clean, mypy clean
-Frontend   22 Vitest tests, TypeScript clean, ESLint clean, production build clean
-Browser    2 Playwright tests passing
+Backend    99 pytest tests, 86.16% coverage, Ruff clean, mypy clean
+Frontend   35 Vitest tests, TypeScript clean, ESLint clean, production build clean
+Browser    4 Playwright tests: live import/run/compare, mobile navigation,
+           recorded fallback, and immediate recorded demo
+Database   SQLite Alembic upgrade verified locally; Postgres migration job in CI
 Action     CLI/shell smoke run passing end to end against the local API
 ```
 
@@ -282,11 +330,14 @@ npm run typecheck
 npm test
 npm run build
 npm run test:e2e
+npm run test:e2e:recorded
 ```
 
-Playwright installs Chromium with `npx playwright install chromium`. The E2E suite starts an
+Playwright installs Chromium with `npx playwright install chromium`. The live E2E suite starts an
 isolated API on port 8001 and a Next.js dev server on 3001, migrates a disposable database, and does
-not touch the development database.
+not touch the development database. The recorded suite on port 3002 points the dashboard at a dead
+API port, shortens the wake budget to 3 seconds, and asserts the waking state, the permanent banner,
+and read-only navigation.
 
 ## Repository layout
 
@@ -298,20 +349,25 @@ backend/
     core/           settings, enums, errors
     evaluators/     Ragas, deterministic mock, judge cache
     providers/      Groq, Ollama, mock streaming providers
-    reference/      synthetic corpus, Qdrant index, reference RAG
+    reference/      synthetic corpus, Qdrant index, startup bootstrap
     schemas/        Pydantic API and domain contracts
-    services/       dataset import, run lifecycle, metrics, demo seed
+    services/       dataset import, run lifecycle, live limits, demo seed
     storage/        SQLAlchemy models, sessions, migrations
     workers/        single-process queue and run executor
   data/             28 documents and 112 golden questions
+  scripts/          recorded-demo exporter
   tests/            unit and integration tests
 frontend/
   src/app/          dashboard routes
-  src/components/   run, compare, dataset, form, and shell components
-  e2e/              Playwright user journeys
+  src/components/   run, compare, dataset, form, shell, and fallback components
+  src/lib/          API client, backend mode, recorded resolver and export
+  e2e/              Playwright live and backend-off journeys
   scripts/          screenshot capture
 action/             composite GitHub Action
 docs/screenshots/   committed product screenshots
+render.yaml         Render Blueprint for the hosted backend
+DEPLOYMENT.md       click-by-click free-tier setup and verification
+DECISIONS.md        deployment and guardrail trade-offs
 ```
 
 ## Design constraints
@@ -332,16 +388,23 @@ docs/screenshots/   committed product screenshots
 
 ## Known limitations
 
-- SQLite and the in-process worker are single-instance by design. Do not run multiple Uvicorn
-  workers. Move to PostgreSQL plus a durable queue before scaling horizontally.
+- The in-process worker is single-instance by design. Local SQLite also requires a single process.
+  Production uses Postgres, but horizontal API scaling would still create multiple queues. Move to a
+  durable queue before scaling out.
+- The free hosted demo is intentionally limited: 10 queries per run, 3 runs per network per hour,
+  and 20 runs per UTC day. Render free services sleep, so the first request can take 30-60 seconds
+  and the dashboard may open the recorded demo instead.
 - There is no multi-user authentication or role model, only an optional shared write token.
 - SSRF protection for user-supplied target URLs and provider budget limits are not implemented.
   Do not expose an unrestricted API that can spend credentials or reach private networks.
 - Judge cache entries have no TTL or automatic invalidation when a provider changes a model under
   the same name.
+- The recorded demo is a committed export, not a live shadow deployment. It can lag the seed and
+  response shape; regenerate it with `python -m scripts.export_recorded_demo` and commit the result
+  when either changes.
 - Live Groq/Ollama judge behavior was not exercised in the authoring environment because no paid
   key or local model was available.
-- Docker Compose and the GitHub-hosted workflow were not executed locally because Docker and a
-  GitHub runner were unavailable. CI configuration is included.
+- Docker Compose was not executed in the authoring environment because Docker was unavailable. The
+  Compose file is validated in CI, and the Render Docker build is verified during deployment.
 - The GitHub Action's pull-request comment path requires repository permissions and cannot be
   exercised without GitHub; its CLI/gate path was smoke-tested locally.

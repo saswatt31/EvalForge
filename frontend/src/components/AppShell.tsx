@@ -11,6 +11,7 @@ import {
   setWriteToken,
   subscribeWriteToken,
 } from "@/lib/api";
+import { retryBackend, useBackendState, type RecordedReason } from "@/lib/backend";
 import { useMeta } from "@/lib/hooks";
 import {
   CloseIcon,
@@ -31,6 +32,13 @@ const navigation = [
 ];
 
 const noStoredToken = () => false;
+
+function recordedReasonMessage(reason: RecordedReason | null): string {
+  if (reason === "rate_limited") return "The free-tier live-run budget is exhausted right now.";
+  if (reason === "waking_timeout") return "The free-tier API did not wake up in time.";
+  if (reason === "unreachable") return "The live API is unreachable.";
+  return "You opened the recorded demo.";
+}
 
 function pageTitle(pathname: string): string {
   if (pathname === "/") return "Overview";
@@ -117,6 +125,8 @@ function WriteAccess({ demoMode }: { demoMode: boolean }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { data: meta, error: metaError } = useMeta();
+  const backend = useBackendState();
+  const recorded = backend.mode === "recorded";
   const [menuPath, setMenuPath] = useState<string | null>(null);
   const menuOpen = menuPath === pathname;
   const title = pageTitle(pathname);
@@ -167,28 +177,42 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="api-state">
             <span
               className={`api-dot ${
-                metaError ? "offline" : meta?.database_ready ? "ready" : "waiting"
+                recorded
+                  ? "waiting"
+                  : metaError
+                    ? "offline"
+                    : meta?.database_ready
+                      ? "ready"
+                      : "waiting"
               }`}
               aria-hidden="true"
             />
             <div>
               <strong>
-                {metaError
-                  ? "API unreachable"
-                  : meta?.database_ready
-                    ? "API connected"
-                    : "API starting"}
+                {recorded
+                  ? "Recorded demo"
+                  : metaError
+                    ? "API unreachable"
+                    : meta?.database_ready
+                      ? "API connected"
+                      : "API starting"}
               </strong>
               <span>
-                {meta ? `${meta.target_kinds.length} target kinds · v0.1` : "Checking backend"}
+                {recorded
+                  ? "Live API offline or paused"
+                  : meta
+                    ? `${meta.target_kinds.length} target kinds · v0.1`
+                    : "Checking backend"}
               </span>
             </div>
           </div>
-          <WriteAccess demoMode={Boolean(meta?.demo_mode)} />
-          <a className="docs-link" href={API_DOCS_URL} target="_blank" rel="noreferrer">
-            <ExternalIcon />
-            <span>API documentation</span>
-          </a>
+          <WriteAccess demoMode={recorded || Boolean(meta?.demo_mode)} />
+          {recorded ? null : (
+            <a className="docs-link" href={API_DOCS_URL} target="_blank" rel="noreferrer">
+              <ExternalIcon />
+              <span>API documentation</span>
+            </a>
+          )}
         </div>
       </aside>
 
@@ -202,7 +226,19 @@ export function AppShell({ children }: { children: ReactNode }) {
       ) : null}
 
       <div className="app-main">
-        {meta?.demo_mode ? (
+        {recorded ? (
+          <div className="demo-banner recorded-banner" role="status">
+            <span className="demo-pill">Recorded</span>
+            <span>
+              {recordedReasonMessage(backend.reason)} You are viewing committed demo data generated
+              from the synthetic corpus with the deterministic mock judge. Nothing on this screen is
+              a live run or a live measurement.
+            </span>
+            <button className="button tiny ghost" type="button" onClick={retryBackend}>
+              Retry live backend
+            </button>
+          </div>
+        ) : meta?.demo_mode ? (
           <div className="demo-banner" role="status">
             <span className="demo-pill">Demo</span>
             This deployment is read-only. Benchmark values are synthetic and generated from the

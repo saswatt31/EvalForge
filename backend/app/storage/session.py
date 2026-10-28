@@ -4,11 +4,29 @@ from typing import Any
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 
 settings = get_settings()
 
-engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+
+def engine_options(settings: Settings) -> dict[str, Any]:
+    """Return engine options that work for SQLite locally and hosted Postgres in production."""
+
+    options: dict[str, Any] = {"pool_pre_ping": True}
+    if settings.database_url.startswith("postgresql+asyncpg"):
+        options.update(
+            {
+                "pool_size": 5,
+                "max_overflow": 5,
+                "pool_recycle": 1_800,
+            }
+        )
+        if settings.database_ssl is not False:
+            options["connect_args"] = {"ssl": True}
+    return options
+
+
+engine = create_async_engine(settings.database_url, **engine_options(settings))
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 

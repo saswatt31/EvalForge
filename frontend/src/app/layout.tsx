@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { AppShell } from "@/components/AppShell";
+import { BackendGate } from "@/components/BackendGate";
 
 import "./globals.css";
 
@@ -29,7 +30,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AppShell>{children}</AppShell>
+        <BackendGate>
+          <AppShell>{children}</AppShell>
+        </BackendGate>
       </body>
     </html>
   );

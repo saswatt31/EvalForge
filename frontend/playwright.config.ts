@@ -6,6 +6,7 @@ const token = process.env.EVALFORGE_E2E_TOKEN ?? "evalforge-e2e-token";
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: /recorded\.spec\.ts/,
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,

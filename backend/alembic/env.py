@@ -13,7 +13,7 @@ from app.storage.base import Base
 
 config = context.config
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -46,10 +46,17 @@ def run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
+    connect_args: dict[str, object] = {}
+    if (
+        settings.database_url.startswith("postgresql+asyncpg")
+        and settings.database_ssl is not False
+    ):
+        connect_args["ssl"] = True
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:

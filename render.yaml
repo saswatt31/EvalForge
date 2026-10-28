@@ -1,0 +1,54 @@
+# Render Blueprint for the EvalForge API.
+#
+# The free plan has no persistent disk, so Postgres and Qdrant are external managed services.
+# The API and the in-process run worker share this single container, which keeps the queue and
+# SQLite/Postgres writes in one process.
+services:
+  - type: web
+    name: evalforge-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: EVALFORGE_ENVIRONMENT
+        value: production
+      - key: EVALFORGE_DEMO_MODE
+        value: "false"
+      - key: EVALFORGE_DATABASE_URL
+        sync: false
+      - key: EVALFORGE_DATABASE_SSL
+        value: "true"
+      # Set this after Vercel assigns the production URL: ["https://<project>.vercel.app"]
+      - key: EVALFORGE_CORS_ORIGINS
+        sync: false
+      - key: EVALFORGE_WRITE_API_TOKEN
+        generateValue: true
+      - key: EVALFORGE_LIVE_RUN_PROTECTION
+        value: "true"
+      - key: EVALFORGE_LIVE_RUN_MAX_QUERIES
+        value: "10"
+      - key: EVALFORGE_LIVE_RUN_DAILY_CAP
+        value: "20"
+      - key: EVALFORGE_LIVE_RUN_PER_IP_LIMIT
+        value: "3"
+      - key: EVALFORGE_LIVE_RUN_RATE_WINDOW_SECONDS
+        value: "3600"
+      - key: EVALFORGE_LIVE_RUN_IP_HASH_SALT
+        generateValue: true
+      - key: EVALFORGE_QDRANT_URL
+        sync: false
+      - key: EVALFORGE_QDRANT_API_KEY
+        sync: false
+      - key: EVALFORGE_QDRANT_COLLECTION
+        value: evalforge_reference_v1
+      - key: EVALFORGE_REFERENCE_INDEX_ON_STARTUP
+        value: "true"
+      # Optional. The mock judge works without this; Ragas/Groq judging needs it.
+      - key: EVALFORGE_GROQ_API_KEY
+        sync: false
+      - key: EVALFORGE_LOG_LEVEL
+        value: INFO

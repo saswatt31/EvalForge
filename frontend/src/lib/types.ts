@@ -188,6 +188,14 @@ export interface MetaProvider {
   base_url?: string;
 }
 
+export interface LiveRunPolicy {
+  enabled: boolean;
+  max_queries_per_run: number;
+  daily_run_cap: number | null;
+  per_ip_runs_per_window: number | null;
+  window_seconds: number | null;
+}
+
 export interface Meta {
   demo_mode: boolean;
   write_protected: boolean;
@@ -199,6 +207,7 @@ export interface Meta {
   max_dataset_items: number;
   max_result_page_size: number;
   sample_dataset_available: boolean;
+  live_runs: LiveRunPolicy;
 }
 
 export interface DatasetImportRequest {

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.deps import RunManagerDep, SessionDep, require_write_access
 from app.core.config import get_settings
@@ -15,6 +15,11 @@ from app.schemas.run import (
     RunPage,
     RunStatusResponse,
     RunSummary,
+)
+from app.services.live_runs import (
+    LiveRunLimitError,
+    client_ip_from_request,
+    reserve_live_run_slot,
 )
 from app.services.runs import (
     RunNotFoundError,
@@ -56,11 +61,37 @@ async def list_runs_endpoint(
 )
 async def create_run_endpoint(
     payload: RunCreate,
+    request: Request,
     session: SessionDep,
     manager: RunManagerDep,
 ) -> RunSummary:
+    settings = get_settings()
     try:
-        run = await create_run(session, get_settings(), payload)
+        async with reserve_live_run_slot(
+            session,
+            settings,
+            client_ip_from_request(request),
+        ) as client_ip_hash:
+            run = await create_run(
+                session,
+                settings,
+                payload,
+                client_ip_hash=client_ip_hash,
+                max_queries=settings.live_run_max_queries if settings.live_run_protection else None,
+            )
+    except LiveRunLimitError as exc:
+        limit = exc.limit
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "live_runs_paused",
+                "reason": limit.reason,
+                "message": limit.message,
+                "limit": limit.limit,
+                "retry_after_seconds": limit.retry_after_seconds,
+            },
+            headers={"Retry-After": str(limit.retry_after_seconds)},
+        ) from exc
     except RunServiceError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

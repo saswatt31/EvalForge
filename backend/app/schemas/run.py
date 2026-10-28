@@ -207,6 +207,14 @@ class CompareResponse(BaseModel):
     rows: list[CompareRow]
 
 
+class LiveRunPolicy(BaseModel):
+    enabled: bool
+    max_queries_per_run: int
+    daily_run_cap: int | None
+    per_ip_runs_per_window: int | None
+    window_seconds: int | None
+
+
 class MetaResponse(BaseModel):
     demo_mode: bool
     write_protected: bool
@@ -218,3 +226,4 @@ class MetaResponse(BaseModel):
     max_dataset_items: int
     max_result_page_size: int
     sample_dataset_available: bool
+    live_runs: LiveRunPolicy

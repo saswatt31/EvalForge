@@ -1,3 +1,9 @@
+import {
+  activateRecorded,
+  isRecordedMode,
+  markBackendWaking,
+} from "./backend";
+import { resolveRecorded } from "./recorded";
 import type {
   CompareResponse,
   DatasetDetail,
@@ -110,6 +116,22 @@ function errorMessage(detail: unknown, status: number): string {
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? "GET").toUpperCase();
+  if (isRecordedMode()) {
+    if (method !== "GET") {
+      throw new ApiError(
+        403,
+        "The live API is offline or paused. This is the recorded demo, so writes are disabled.",
+        { code: "recorded_demo_read_only" },
+      );
+    }
+    const recorded = await resolveRecorded<T>(path);
+    if (recorded !== undefined) return recorded;
+    throw new ApiError(404, "That record is not part of the recorded demo.", {
+      code: "recorded_demo_not_found",
+    });
+  }
+
   const token = getWriteToken();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
@@ -126,9 +148,10 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
       cache: "no-store",
     });
   } catch {
+    markBackendWaking();
     throw new ApiError(
       0,
-      `Could not reach the EvalForge API at ${API_ROOT}. Is the backend running?`,
+      `Could not reach the EvalForge API at ${API_ROOT}. The dashboard will retry, then use the recorded demo if it stays offline.`,
     );
   }
 
@@ -143,6 +166,9 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     const record =
       detail && typeof detail === "object" ? (detail as Record<string, unknown>) : null;
     const issues = validationIssues(record?.errors ?? detail);
+    if (response.status === 429 && record?.code === "live_runs_paused") {
+      activateRecorded("rate_limited");
+    }
     throw new ApiError(response.status, errorMessage(detail, response.status), detail, issues);
   }
 

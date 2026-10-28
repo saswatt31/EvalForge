@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 
 import { createRun } from "@/lib/api";
+import { useBackendState } from "@/lib/backend";
 import { useDatasets, useMeta, useRuns } from "@/lib/hooks";
 import { shortId } from "@/lib/format";
 import type { RunCreateRequest, TargetKind } from "@/lib/types";
@@ -31,6 +32,7 @@ export function NewRunForm() {
   const { data: meta, error: metaError } = useMeta();
   const { data: datasets, error: datasetsError } = useDatasets();
   const { data: recentRuns } = useRuns({ limit: 100 });
+  const backend = useBackendState();
 
   const [datasetId, setDatasetId] = useState(searchParams.get("dataset") ?? "");
   const [name, setName] = useState("");
@@ -63,7 +65,13 @@ export function NewRunForm() {
       ) ?? [],
     [recentRuns],
   );
-  const readOnly = Boolean(meta?.demo_mode);
+  const recorded = backend.mode === "recorded";
+  const readOnly = recorded || Boolean(meta?.demo_mode);
+  const livePolicy = meta?.live_runs;
+  const liveLimited = !readOnly && Boolean(livePolicy?.enabled);
+  const datasetQueries = selectedDataset?.latest_version.item_count ?? 0;
+  const effectiveQueries =
+    liveLimited && livePolicy ? Math.min(datasetQueries, livePolicy.max_queries_per_run) : datasetQueries;
 
   function chooseProvider(next: string) {
     setProvider(next);
@@ -176,10 +184,29 @@ export function NewRunForm() {
       />
 
       {metaError ? <ErrorNotice error={metaError} title="Could not load workspace settings" /> : null}
-      {readOnly ? (
+      {recorded ? (
+        <div className="notice">
+          <strong>Recorded demo.</strong> The live API is offline or paused, so this page cannot
+          queue a new run. Retry the live backend from the banner to run a real mini-suite.
+        </div>
+      ) : readOnly ? (
         <div className="notice">
           <strong>This workspace is read-only.</strong> The public demo cannot queue new provider
           calls or write benchmark data.
+        </div>
+      ) : liveLimited && livePolicy ? (
+        <div className="notice compact">
+          <strong>Free-tier live runs are capped.</strong> Each run evaluates at most{" "}
+          {livePolicy.max_queries_per_run} of this dataset&apos;s queries
+          {livePolicy.daily_run_cap
+            ? `, with up to ${livePolicy.daily_run_cap} runs per UTC day across all visitors`
+            : ""}
+          {livePolicy.per_ip_runs_per_window && livePolicy.window_seconds
+            ? ` and ${livePolicy.per_ip_runs_per_window} per network every ${Math.round(
+                livePolicy.window_seconds / 60,
+              )} minutes`
+            : ""}
+          .
         </div>
       ) : null}
 
@@ -451,7 +478,12 @@ export function NewRunForm() {
               </div>
               <div>
                 <dt>Queries</dt>
-                <dd>{selectedDataset?.latest_version.item_count ?? "—"}</dd>
+                <dd>
+                  {effectiveQueries || "—"}
+                  {liveLimited && effectiveQueries < datasetQueries ? (
+                    <small className="summary-inline"> of {datasetQueries}</small>
+                  ) : null}
+                </dd>
               </div>
               <div>
                 <dt>Target</dt>
@@ -471,9 +503,7 @@ export function NewRunForm() {
               </div>
               <div>
                 <dt>Est. judge calls</dt>
-                <dd>
-                  {(selectedDataset?.latest_version.item_count ?? 0) * 3 * judgeRepeats}
-                </dd>
+                <dd>{effectiveQueries * 3 * judgeRepeats}</dd>
               </div>
             </dl>
             {targetKind === "reference" && provider !== "mock" && judgeMode === "mock" ? (
@@ -496,7 +526,16 @@ export function NewRunForm() {
               {submitting ? "Queueing run…" : "Start evaluation"}
               {!submitting ? <ArrowIcon /> : null}
             </button>
-            {readOnly ? <p className="summary-note">Unavailable in the read-only demo.</p> : null}
+            {recorded ? (
+              <p className="summary-note">Unavailable in the recorded demo.</p>
+            ) : readOnly ? (
+              <p className="summary-note">Unavailable in the read-only demo.</p>
+            ) : liveLimited && livePolicy ? (
+              <p className="summary-note">
+                This free-tier run will evaluate the first {livePolicy.max_queries_per_run} queries
+                in the dataset version.
+              </p>
+            ) : null}
           </div>
         </aside>
       </form>
