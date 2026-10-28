@@ -5,6 +5,8 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import __version__
+from app.core.config import get_settings
 from app.main import create_app
 from app.storage.session import get_session
 
@@ -15,8 +17,8 @@ async def test_health_returns_version_and_environment(client: AsyncClient) -> No
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "version": "0.1.0",
-        "environment": "development",
+        "version": __version__,
+        "environment": get_settings().environment,
     }
 
 
