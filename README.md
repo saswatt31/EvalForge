@@ -19,6 +19,15 @@ setup and [DECISIONS.md](DECISIONS.md) for the trade-offs.
 [Core functions](CORE_FUNCTIONS.md) | [Interview notes](INTERVIEW_PREP.md) |
 [GitHub Action](action/README.md) | [API docs](http://localhost:8000/docs) after starting the API
 
+## Deployment status
+
+The hosted free-tier deployment is **configured but not provisioned by this repository**. Render,
+Vercel, Qdrant Cloud, and Neon/Supabase assign account-specific URLs and secrets during setup, so no
+public dashboard URL is committed here. Follow [DEPLOYMENT.md](DEPLOYMENT.md) to create those
+resources; the Vercel production URL is assigned at that step. Until then, run EvalForge locally or
+with Docker Compose. The committed screenshots, demo seed, and recorded export are synthetic and
+must not be read as a live deployment or live measurements.
+
 ![Dashboard overview](docs/screenshots/overview.png)
 
 ## What it measures
